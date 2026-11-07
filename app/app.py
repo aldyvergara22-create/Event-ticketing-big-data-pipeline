@@ -23,15 +23,28 @@ def init_db():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        # Tabla de eventos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 price NUMERIC(10, 2) NOT NULL);
         """)
+
+        # Tabla de compras
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS purchases (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(100) NOT NULL,
+                event_id INT REFERENCES events(id),
+                total_paid NUMERIC(10, 2) NOT NULL,
+                purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+        """)
+
         conn.commit()
         cursor.close()
         conn.close()
+        print("Base de datos y tablas inicializadas correctamente.")
     except Exception as e:
         print(f"Error al inicializar la base de datos: {e}")
 
@@ -83,6 +96,67 @@ def create_event():
     conn.close()
 
     return jsonify({"id": new_id, "name": name, "price": price}), 201
+
+
+# ENDPOINT 3: REALIZAR UNA COMPRA DE ENTRADA
+@app.route("/purchases", methods=["POST"])
+def create_purchase():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    event_id = data.get("event_id")
+
+    # validar que lleguen los datos requeridos
+    if not user_id or not event_id:
+        return jsonify({"error": "Faltan datos requeridos(user_id y event_id)"}), 400
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # Verificar si el evento existe y se obtiene su precio
+        cur.execute("SELECT id, name, price FROM events WHERE id = %s;", (event_id,))
+        event = cur.fetchone()
+
+        if not event:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "El evento seleccionado no existe"}), 404
+
+        event_name = event[1]
+        event_price = event[2]
+
+        # Insertar la compra en la tabla de compras
+        cur.execute(
+            "INSERT INTO purchases (user_id, event_id, total_paid) VALUES (%s, %s, %s) RETURNING id, purchase_date;",
+            (user_id, event_id, event_price),
+        )
+        purchase_info = cur.fetchone()
+        purchase_id = purchase_info[0]
+        purchase_date = purchase_info[1]
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+    # Retomar la respuesta exitosa con los detalle de la compra
+    return (
+        jsonify(
+            {
+                "message": "Compra realizada con éxito",
+                "purchase_id": purchase_id,
+                "user_id": user_id,
+                "event_id": event_id,
+                "event_name": event_name,
+                "total_paid": float(event_price) if event_price is not None else 0.0,
+                "date": purchase_date.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        ),
+        201,
+    )
 
 
 if __name__ == "__main__":
