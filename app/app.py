@@ -159,5 +159,41 @@ def create_purchase():
     )
 
 
+## ENDPOINT 4: VER TODAS LAS COMPRAS
+@app.route("/purchases", methods=["GET"])
+def get_purchases():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # consulto las compras y hago un JOIN con events para ver el nombre del evento
+        cur.execute("""
+            SELECT p.id, p.user_id, p.event_id, e.name AS event_name, p.total_paid, p.purchase_date
+            FROM purchases p
+            JOIN events e ON p.event_id = e.id
+            ORDER BY p.purchase_date DESC;
+            """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # Convertimos los resultados a una lista de diccionarios
+        purchases_list = []
+        for row in rows:
+            purchases_list.append(
+                {
+                    "purchase_id": row[0],
+                    "user_id": row[1],
+                    "event_id": row[2],
+                    "event_name": row[3],
+                    "total_paid": float(row[4]),
+                    "purchase_date": str(row[5]),
+                }
+            )
+        return jsonify(purchases_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
