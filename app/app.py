@@ -1,8 +1,41 @@
 from flask import Flask, jsonify, request
 import os
 import psycopg2
+from celery import Celery
 
 app = Flask(__name__)
+
+# Configuración de Redis como broker ("el mensajero") para Celery
+app.config["CELERY_BROKER_URL"] = os.getenv("REDIS_URL", "redis://redis:6379/0")
+app.config["CELERY_RESULT_BACKEND"] = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+
+# función para inicializar Celery con la configuración de Flask
+def make_celery(app):
+    celery = Celery(
+        app.import_name,
+        broker=app.config["CELERY_BROKER_URL"],
+        backend=app.config["CELERY_RESULT_BACKEND"],
+    )
+    celery.conf.update(app.config)
+    return celery
+
+
+celery = make_celery(app)
+
+
+# Defino tarea en segundo plano (CELERY TASK)
+@celery.task(name="app.send_ticket_email")
+def send_ticket_email(user_id, event_name):
+    # Simulación (generar PDF y mandar correo electrónico)
+    import time
+
+    time.sleep(3)
+    print(
+        f" [CORREO ENVIADO] Entrada generada y enviada a usuario {user_id} para el evento '{event_name}'."
+    )
+    return f"Correo enviado a usuario {user_id}"
+
 
 # Configuración de la conexión a la base de datos PostgreSQL
 DB_HOST = os.environ.get("DB_HOST", "db")
@@ -141,6 +174,8 @@ def create_purchase():
     finally:
         cur.close()
         conn.close()
+
+    send_ticket_email.delay(user_id, event_name)  # Llamada a la tarea en segundo plano
 
     # Retomar la respuesta exitosa con los detalle de la compra
     return (
