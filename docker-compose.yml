@@ -41,5 +41,18 @@ services:
       - db
       - redis
 
+  spark_analytics:
+    image: apache/spark-py:latest
+    container_name: spark_analytics
+    user: root
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: /opt/spark/bin/spark-submit --packages org.postgresql:postgresql:42.7.1 analytics.py
+    depends_on:
+      - db
+    profiles:
+      - analytics
+
 volumes:
   postgres_data:
